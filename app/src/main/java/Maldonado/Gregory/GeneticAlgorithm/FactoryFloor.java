@@ -11,14 +11,21 @@ import java.util.concurrent.TimeoutException;
 public class FactoryFloor implements Runnable {
 
     public static Population population;
-    private List<Station> stations = new ArrayList<>();
-    private final Station[][] floor = new Station[Constants.FACTORY_FLOOR_SIZE][Constants.FACTORY_FLOOR_SIZE];
+    private volatile List<Station> stations = new ArrayList<>();
+    private volatile Station[][] floor = new Station[Constants.FACTORY_FLOOR_SIZE][Constants.FACTORY_FLOOR_SIZE];
     private final HashMap<Integer, Station> hashedStations = new HashMap<>();
     private double fitnessScore;
-    private final static Exchanger<Object[]> exchanger = new Exchanger<>();
+    private final static Exchanger<Station[][]> exchanger = new Exchanger<>();
 
     public FactoryFloor() {
         setup(Constants.MAXIMUM_STATIONS);
+    }
+
+    public FactoryFloor(List<Station> stations, Station[][] floor) {
+        this.stations = stations;
+        stations.forEach( station -> {
+          floor[station.getX()][station.getY()] = station;
+        });
     }
 
     public void setup(int Stations) {
@@ -30,6 +37,8 @@ public class FactoryFloor implements Runnable {
         }
 
         for (int i = 0; i < Stations; i++ ) { stations.add(new Station(this)); }
+
+        fitnessScore = getFitnessScore();
 
         stations.forEach( (station -> {
             hashedStations.put(station.hashCode(), station) ;
@@ -44,48 +53,38 @@ public class FactoryFloor implements Runnable {
 
         while (currentGeneration < Constants.MAXIMUM_GENERATIONS) {
 
-            //System.out.println(this.toString());
+            while (Population.updatePause) {}
 
-            if (currentGeneration == 1 || currentGeneration == Constants.MAXIMUM_GENERATIONS - 1) {
-                System.out.println("Generation " + currentGeneration + " " +  this.toString());
-            }
-
-            // Mutations for X Times: probability of randomizing the X coordinate of a station, the Y coordinate, the flavor, all 3, or none
-            for (int M = 0; M < Constants.MAXIMUM_MUTATIONS; M++) {
-
-                mutation();
-            }
+            for (int M = 0; M < Constants.MAXIMUM_MUTATIONS; M++) { mutation(); }
 
             // Compute Fitness
             fitnessScore = this.getFitnessScore();
 
-            Object[] sentChunk = this.getChunk();
-            Object[] receivedChunk = null;
+            Station[][] sentChunk = this.getChunk();
+            Station[][] receivedChunk = null;
 
             try {
-                receivedChunk = exchanger.exchange(sentChunk, 3000, TimeUnit.MILLISECONDS);
+                receivedChunk = exchanger.exchange(sentChunk, 5000, TimeUnit.MILLISECONDS);
             } catch (InterruptedException | TimeoutException e) {
                 e.printStackTrace();
             }
 
             if (receivedChunk != null) {
-                int swapHashCode = (int) receivedChunk[0];
-                Station[][] chunk = (Station[][]) receivedChunk[1];
 
-                FactoryFloor receivingFloor = population.getHashedFloors().get(swapHashCode);
-                int fitnessScoreIndex = population.getOrderedFloors().indexOf(receivingFloor);
+                FactoryFloor newFloor = new FactoryFloor(new ArrayList<>(stations), this.floor.clone());
 
-                if (fitnessScoreIndex <= Population.topPercent) {
-                    if (chunk != null) {
-                        deleteChunk(chunk);
-                        updateChunk(chunk);
-                    }
+                newFloor.updateChunk(receivedChunk);
+
+                if (newFloor.getFitnessScore() > this.getFitnessScore()) {
+                    this.stations = new ArrayList<>(newFloor.stations);
+                    this.floor = newFloor.floor.clone();
                 }
+
             }
-
-
+            this.fitnessScore = getFitnessScore();
             currentGeneration++;
         }
+
 
     }
 
@@ -132,7 +131,7 @@ public class FactoryFloor implements Runnable {
         return sb.toString();
     }
 
-    private Object[] getChunk() {
+    private Station[][] getChunk() {
         float chunkChance = new Random().nextFloat();
 
 
@@ -172,50 +171,101 @@ public class FactoryFloor implements Runnable {
                 }
             }
         }
-        return new Object[]{this.hashCode(), chunk} ;
+        return chunk;
     }
 
     public void mutation() {
         float chanceOfMutation = new Random().nextFloat();
+        Random randomProperty = new Random();
 
 
         if (chanceOfMutation <= Constants.P_NONE)
             return;
 
-
         int stationIndex = new Random().nextInt(stations.size());
         Station station = stations.get(stationIndex);
 
-        if (chanceOfMutation > Constants.P_NONE && chanceOfMutation <= Constants.P_NONE + Constants.P_X)
-            station.setX(new Random().nextInt(Constants.FACTORY_FLOOR_SIZE));
+        if (chanceOfMutation > Constants.P_NONE && chanceOfMutation <= Constants.P_NONE + Constants.P_X) {
+            int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+            if (floor[randomX][station.getY()] == null) {
+                floor[station.getX()][station.getY()] = null;
+                station.setX(randomX);
+                floor[station.getX()][station.getY()] = station;
+            }
+        }
 
-        else if (chanceOfMutation > Constants.P_NONE + Constants.P_X && chanceOfMutation <= Constants.P_NONE + 2 * Constants.P_Y)
-            station.setY(new Random().nextInt(Constants.FACTORY_FLOOR_SIZE));
 
-        else if (chanceOfMutation > Constants.P_NONE + 2 * Constants.P_Y && chanceOfMutation <= Constants.P_NONE + 3 * Constants.P_F)
-            station.setF(new Random().nextInt(Constants.STATION_FLAVORS));
+        else if (chanceOfMutation > Constants.P_NONE + Constants.P_X && chanceOfMutation <= Constants.P_NONE + 2 * Constants.P_Y) {
+            int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+            if (floor[station.getX()][randomY] == null) {
+                floor[station.getX()][station.getY()] = null;
+                station.setY(randomY);
+                floor[station.getX()][station.getY()] = station;
+            }
+        }
+
+        else if (chanceOfMutation > Constants.P_NONE + 2 * Constants.P_Y && chanceOfMutation <= Constants.P_NONE + 3 * Constants.P_F) {
+            station.setF(randomProperty.nextInt(Constants.STATION_FLAVORS));
+        }
 
         else if (chanceOfMutation > Constants.P_NONE + 3 * Constants.P_F && chanceOfMutation <= Constants.P_NONE + (3 * Constants.P_F)  + Constants.P_ALL) {
-            Random rd = new Random();
-            station.setXYF(rd.nextInt(Constants.FACTORY_FLOOR_SIZE), rd.nextInt(Constants.FACTORY_FLOOR_SIZE), rd.nextInt(Constants.STATION_FLAVORS));
+            int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+            int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+            int randomF = randomProperty.nextInt(Constants.STATION_FLAVORS);
+            if (floor[randomX][randomY] == null) {
+                floor[station.getX()][station.getY()] = null;
+                station.setXYF(randomX, randomY, randomF);
+                floor[station.getX()][station.getY()] = station;
+            }
         }
     }
 
     private void updateChunk(Station[][] chunk) {
+
+        floor = chunk;
+        List<Station> newStationList = new ArrayList<>();
+        int availableSpots = Constants.MAXIMUM_STATIONS;
+
         for (int i = 0; i < Constants.FACTORY_FLOOR_SIZE; i++) {
             for (int j = 0; j < Constants.FACTORY_FLOOR_SIZE; j++) {
-                if (chunk[i][j] != null)
-                    floor[i][j] = chunk[i][j];
+                if (floor[i][j] != null) {
+                    Station station = floor[i][j];
+                    Station newStation = new Station(station.getX(), station.getY(), station.getFlavor());
+                    newStationList.add(newStation);
+                    floor[i][j] = newStation;
+                    availableSpots --;
+                }
             }
         }
+
+        while (availableSpots > 0) {
+
+            boolean stationPicked = false;
+
+            while (!stationPicked) {
+                Station pickedStation = stations.get(new Random().nextInt(stations.size()));
+                Station newStation = new Station(pickedStation.getX(), pickedStation.getY(), pickedStation.getFlavor());
+                if (floor[pickedStation.getX()][pickedStation.getY()] == null) {
+                    stationPicked = true;
+                    newStationList.add(newStation);
+                    stations.remove(pickedStation);
+                }
+            }
+
+            availableSpots--;
+        }
+        stations = newStationList;
     }
 
     private void deleteChunk(Station[][] chunk) {
         for (int i = 0; i < Constants.FACTORY_FLOOR_SIZE; i++) {
             for (int j = 0; j < Constants.FACTORY_FLOOR_SIZE; j++) {
                 if (chunk[i][j] == null) continue;
+                Station removedStation = floor[i][j];
                 floor[i][j] = null;
+                if (removedStation != null) stations.remove(removedStation);
             }
         }
+
     }
 }

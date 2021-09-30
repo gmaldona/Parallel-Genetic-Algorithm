@@ -12,8 +12,8 @@ public class Constants {
     public static final int WINDOW_SIZE         = 1000;
     public static final int DRAWING_SIZE        = 10;
 
-    public static final float MAXIMUM_MUTATIONS = 10;
-    public static final int MAXIMUM_GENERATIONS = 1000;
+    public static final float MAXIMUM_MUTATIONS = 100;
+    public static final int MAXIMUM_GENERATIONS = 10;
 
     public static final float    P_X = 0.1525f;
     public static final float    P_Y = 0.1525f;

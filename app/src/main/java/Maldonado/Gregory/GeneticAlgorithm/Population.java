@@ -18,6 +18,7 @@ public class Population {
     private static List<FactoryFloor> orderedFloors;
     private static status futureStatus = status.INPROGRESS;
     public static HashMap<Integer, FactoryFloor> hashedFloors = new HashMap<>();
+    public static volatile boolean updatePause;
 
     static int topPercent;
 
@@ -26,6 +27,7 @@ public class Population {
         for (int i = 0; i < Constants.MAXIMUM_FLOORS; i++) {
             floors.add(new FactoryFloor());
             hashedFloors.put(floors.get(i).hashCode(), floors.get(i));
+            System.out.println(floors.get(i));
         }
 
         System.out.println();
@@ -39,21 +41,37 @@ public class Population {
                 .map(ex::submit)
                 .collect(Collectors.toList());
 
-        ex.submit( () -> {
-            try {
-                Thread.sleep(1000);
-                updateTopList();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+        Thread updateThread = new Thread( ()-> {
+            while (futureStatus == status.INPROGRESS) {
+                System.out.println(updatePause);
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                updatePause = true;
+                try {
+                    updateTopList();
+                } catch (Exception e) {}
+                updatePause = false;
             }
-
         });
+
+        new Thread( () -> {
+            if (!updateThread.isAlive()) {
+                updatePause = false;
+            }
+        }).start();
+
+        updateThread.start();
 
         while (futureStatus == status.INPROGRESS ) {
             futureStatus = (int) futures.stream()
                     .filter(Future::isDone).count() == 0 ? status.INPROGRESS : status.FINISHED;
         }
 
+
+        floors.forEach(System.out::println);
     }
 
 
@@ -61,7 +79,7 @@ public class Population {
 
         @Override
         public int compare(FactoryFloor factoryFloor, FactoryFloor otherFactoryFloor) {
-            return Double.compare(factoryFloor.getFitnessScore(), otherFactoryFloor.getFitnessScore());
+            return (factoryFloor != null && otherFactoryFloor != null) ? Double.compare(factoryFloor.getFitnessScore(), otherFactoryFloor.getFitnessScore()) : 0;
         }
     }
 
@@ -72,14 +90,12 @@ public class Population {
     public HashMap<Integer, FactoryFloor> getHashedFloors() { return hashedFloors; }
 
     public static void updateTopList() {
-        while (futureStatus == status.INPROGRESS) {
-            //System.out.println(orderedFloors.size());
+        if (futureStatus == status.INPROGRESS) {
             orderedFloors.sort(new FactoryFloorCompare());
             Collections.reverse(orderedFloors);
-            orderedFloors.stream()
-                    .map(FactoryFloor::getFitnessScore)
-                    .forEach(System.out::println);
-                        System.out.println();
+            //orderedFloors.stream()
+                    //.forEach(System.out::println);
+            System.out.println("Gregory Maldonado " + orderedFloors.get(0).getStations().size());
         }
     }
 

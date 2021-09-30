@@ -31,6 +31,12 @@ public class Station {
 
     }
 
+    public Station(int x, int y, int flavor) {
+        this.x = x;
+        this.y = y;
+        this.flavor = flavor;
+    }
+
     public int getX() { return x; }
     public int getY() { return y; }
     public int getFlavor() { return flavor; }
