@@ -41,6 +41,8 @@ public class Station {
     public int getY() { return y; }
     public int getFlavor() { return flavor; }
 
+    public void setFactoryFloor(FactoryFloor factoryFloor) { this.factoryFloor = factoryFloor; }
+
     public void setX(int x) {
         if (checkFloorAvailability(x, this.y))
             this.x = x;

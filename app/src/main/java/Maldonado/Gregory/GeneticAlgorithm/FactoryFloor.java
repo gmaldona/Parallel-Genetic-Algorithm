@@ -5,6 +5,7 @@ import com.google.common.util.concurrent.AtomicDouble;
 
 import java.util.*;
 import java.util.concurrent.Exchanger;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -16,6 +17,7 @@ public class FactoryFloor implements Runnable {
     private final HashMap<Integer, Station> hashedStations = new HashMap<>();
     private double fitnessScore;
     private final static Exchanger<Station[][]> exchanger = new Exchanger<>();
+    private volatile int currentGeneration;
 
     public FactoryFloor() {
         setup(Constants.MAXIMUM_STATIONS);
@@ -49,12 +51,12 @@ public class FactoryFloor implements Runnable {
     @Override
     public void run() {
 
-        int currentGeneration = 0;
+        currentGeneration = 0;
 
         while (currentGeneration < Constants.MAXIMUM_GENERATIONS) {
 
             while (Population.updatePause) {}
-
+            System.out.println("Generation " + currentGeneration );
             for (int M = 0; M < Constants.MAXIMUM_MUTATIONS; M++) { mutation(); }
 
             // Compute Fitness
@@ -80,6 +82,11 @@ public class FactoryFloor implements Runnable {
                     this.floor = newFloor.floor.clone();
                 }
 
+            }
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
             this.fitnessScore = getFitnessScore();
             currentGeneration++;
@@ -175,49 +182,45 @@ public class FactoryFloor implements Runnable {
     }
 
     public void mutation() {
-        float chanceOfMutation = new Random().nextFloat();
-        Random randomProperty = new Random();
+        try {
+            float chanceOfMutation = ThreadLocalRandom.current().nextFloat();
+            ThreadLocalRandom randomProperty = ThreadLocalRandom.current();
 
 
-        if (chanceOfMutation <= Constants.P_NONE)
-            return;
+            if (chanceOfMutation <= Constants.P_NONE)
+                return;
 
-        int stationIndex = new Random().nextInt(stations.size());
-        Station station = stations.get(stationIndex);
+            int stationIndex = ThreadLocalRandom.current().nextInt(stations.size());
+            Station station = stations.get(stationIndex);
+            station.setFactoryFloor(this);
 
-        if (chanceOfMutation > Constants.P_NONE && chanceOfMutation <= Constants.P_NONE + Constants.P_X) {
-            int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
-            if (floor[randomX][station.getY()] == null) {
-                floor[station.getX()][station.getY()] = null;
-                station.setX(randomX);
-                floor[station.getX()][station.getY()] = station;
+            if (chanceOfMutation > Constants.P_NONE && chanceOfMutation <= Constants.P_NONE + Constants.P_X) {
+                int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+                if (floor[randomX][station.getY()] == null) {
+                    floor[station.getX()][station.getY()] = null;
+                    station.setX(randomX);
+                    floor[station.getX()][station.getY()] = station;
+                }
+            } else if (chanceOfMutation > Constants.P_NONE + Constants.P_X && chanceOfMutation <= Constants.P_NONE + 2 * Constants.P_Y) {
+                int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+                if (floor[station.getX()][randomY] == null) {
+                    floor[station.getX()][station.getY()] = null;
+                    station.setY(randomY);
+                    floor[station.getX()][station.getY()] = station;
+                }
+            } else if (chanceOfMutation > Constants.P_NONE + 2 * Constants.P_Y && chanceOfMutation <= Constants.P_NONE + 3 * Constants.P_F) {
+                station.setF(randomProperty.nextInt(Constants.STATION_FLAVORS));
+            } else if (chanceOfMutation > Constants.P_NONE + 3 * Constants.P_F && chanceOfMutation <= Constants.P_NONE + (3 * Constants.P_F) + Constants.P_ALL) {
+                int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+                int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
+                int randomF = randomProperty.nextInt(Constants.STATION_FLAVORS);
+                if (floor[randomX][randomY] == null) {
+                    floor[station.getX()][station.getY()] = null;
+                    station.setXYF(randomX, randomY, randomF);
+                    floor[station.getX()][station.getY()] = station;
+                }
             }
-        }
-
-
-        else if (chanceOfMutation > Constants.P_NONE + Constants.P_X && chanceOfMutation <= Constants.P_NONE + 2 * Constants.P_Y) {
-            int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
-            if (floor[station.getX()][randomY] == null) {
-                floor[station.getX()][station.getY()] = null;
-                station.setY(randomY);
-                floor[station.getX()][station.getY()] = station;
-            }
-        }
-
-        else if (chanceOfMutation > Constants.P_NONE + 2 * Constants.P_Y && chanceOfMutation <= Constants.P_NONE + 3 * Constants.P_F) {
-            station.setF(randomProperty.nextInt(Constants.STATION_FLAVORS));
-        }
-
-        else if (chanceOfMutation > Constants.P_NONE + 3 * Constants.P_F && chanceOfMutation <= Constants.P_NONE + (3 * Constants.P_F)  + Constants.P_ALL) {
-            int randomX = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
-            int randomY = randomProperty.nextInt(Constants.FACTORY_FLOOR_SIZE);
-            int randomF = randomProperty.nextInt(Constants.STATION_FLAVORS);
-            if (floor[randomX][randomY] == null) {
-                floor[station.getX()][station.getY()] = null;
-                station.setXYF(randomX, randomY, randomF);
-                floor[station.getX()][station.getY()] = station;
-            }
-        }
+        } catch (Exception e) {e.printStackTrace();}
     }
 
     private void updateChunk(Station[][] chunk) {
@@ -257,15 +260,5 @@ public class FactoryFloor implements Runnable {
         stations = newStationList;
     }
 
-    private void deleteChunk(Station[][] chunk) {
-        for (int i = 0; i < Constants.FACTORY_FLOOR_SIZE; i++) {
-            for (int j = 0; j < Constants.FACTORY_FLOOR_SIZE; j++) {
-                if (chunk[i][j] == null) continue;
-                Station removedStation = floor[i][j];
-                floor[i][j] = null;
-                if (removedStation != null) stations.remove(removedStation);
-            }
-        }
-
-    }
+    public int getCurrentGeneration() { return this.currentGeneration; }
 }

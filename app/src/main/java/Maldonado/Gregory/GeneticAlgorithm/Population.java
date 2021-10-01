@@ -1,15 +1,12 @@
 package Maldonado.Gregory.GeneticAlgorithm;
 
-import Maldonado.Gregory.GeneticAlgorithm.GUI.StationVisualization;
+import Maldonado.Gregory.GeneticAlgorithm.GUI.FloorVisualization;
 import Maldonado.Gregory.GeneticAlgorithm.Util.Constants;
-import com.google.common.util.concurrent.AtomicDouble;
 
-import java.text.DecimalFormat;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 public class Population {
@@ -19,6 +16,8 @@ public class Population {
     private static status futureStatus = status.INPROGRESS;
     public static HashMap<Integer, FactoryFloor> hashedFloors = new HashMap<>();
     public static volatile boolean updatePause;
+
+    public static volatile FactoryFloor topPerformingFloor ;
 
     static int topPercent;
 
@@ -32,27 +31,29 @@ public class Population {
 
         System.out.println();
         orderedFloors = new ArrayList<>(floors);
-        //updateTopList();
         topPercent = (int) Math.floor( 0.10 * orderedFloors.size() );
-
 
         FactoryFloor.population = this;
         List<Future> futures = floors.stream()
                 .map(ex::submit)
                 .collect(Collectors.toList());
 
+        FloorVisualization GUI = new FloorVisualization();
+
         Thread updateThread = new Thread( ()-> {
+            GUI.setFloor(floors.get(0));
             while (futureStatus == status.INPROGRESS) {
-                System.out.println(updatePause);
                 try {
-                    Thread.sleep(3000);
+                    Thread.sleep(400);
+                    updatePause = true;
+
+                    updateTopList();
+                    GUI.setFloor(topPerformingFloor);
+                    GUI.repaint();
+
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                updatePause = true;
-                try {
-                    updateTopList();
-                } catch (Exception e) {}
                 updatePause = false;
             }
         });
@@ -69,7 +70,6 @@ public class Population {
             futureStatus = (int) futures.stream()
                     .filter(Future::isDone).count() == 0 ? status.INPROGRESS : status.FINISHED;
         }
-
 
         floors.forEach(System.out::println);
     }
@@ -93,11 +93,19 @@ public class Population {
         if (futureStatus == status.INPROGRESS) {
             orderedFloors.sort(new FactoryFloorCompare());
             Collections.reverse(orderedFloors);
-            //orderedFloors.stream()
-                    //.forEach(System.out::println);
-            System.out.println("Gregory Maldonado " + orderedFloors.get(0).getStations().size());
+            FactoryFloor bestPerformingFloor = null;
+
+            for (FactoryFloor floor : orderedFloors) {
+                if (bestPerformingFloor == null) { bestPerformingFloor = floor; continue; }
+                if (floor.getFitnessScore() > bestPerformingFloor.getFitnessScore()) {
+                    bestPerformingFloor = floor;
+                }
+            }
+            if (bestPerformingFloor != null) topPerformingFloor = bestPerformingFloor;
         }
     }
+
+    public static FactoryFloor getBestFloorDesign() { return topPerformingFloor; }
 
     private enum status {
         FINISHED, INPROGRESS
