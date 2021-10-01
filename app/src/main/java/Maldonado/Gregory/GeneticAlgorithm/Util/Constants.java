@@ -4,7 +4,7 @@ import java.awt.*;
 
 public class Constants {
 
-    public static final int MAXIMUM_FLOORS      = 10;
+    public static final int MAXIMUM_FLOORS      = 32;
     public static final int MAXIMUM_STATIONS    = 32;
     public static final int FACTORY_FLOOR_SIZE  = 10;
     public static final int STATION_FLAVORS     = 10;
